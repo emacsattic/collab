@@ -36,8 +36,8 @@
 position 1, the anchor-char is its parent character.")
 (defconst collab-replay-delta 0.03)
 (defconst collab-replay-direction 1)
-(defconst collab-send-delta 0.33)
-(defvar collab-last-send nil)
+(defconst collab-send-delta (seconds-to-time 0.2))
+(defvar collab-send-next nil)
 
 (defvar collab-server-process nil)
 (defvar collab-server-port 8000)
@@ -162,7 +162,7 @@ buffer-local for each buffer running collab.")
   (set (make-local-variable 'collab-inhibit-sending) nil)
   (set (make-local-variable 'collab-client-hash) (make-hash-table :test 'eq))
   (set (make-local-variable 'collab-before-change-start) nil)
-  (set (make-local-variable 'collab-last-send) (current-time))
+  (set (make-local-variable 'collab-send-next) (current-time))
   ;; make the buffer-local variables immune against a major mode change:
   (put 'collab-char-hash 'permanent-local t)
   (put 'collab-local-pc 'permanent-local t)
@@ -172,7 +172,7 @@ buffer-local for each buffer running collab.")
   (put 'collab-next-id 'permanent-local t)
   (put 'collab-inhibit-sending 'permanent-local t)
   (put 'collab-client-hash 'permanent-local t)
-  (put 'collab-last-send 'permanent-local t)
+  (put 'collab-send-next 'permanent-local t)
 
   (collab-add-hooks)
   (let ((saved-buffer-chars-modified-tick (buffer-chars-modified-tick))
@@ -445,12 +445,28 @@ works with eq, not with equal"
       (clrhash (collab-get-ack client)))))
 
 (defun collab-send-all ()
-  (when (> (float-time
-	    (time-subtract (current-time) collab-last-send))
-	   collab-send-delta)
-    (loop for client hash-key of collab-client-hash do
-	  (collab-send client))
-    (setq collab-last-send (current-time))))
+  (if collab-send-next
+      (if (time-less-p (current-time) collab-send-next)
+	  ;; we evaluate (current-buffer) now, this ensures
+	  ;; that collab-send-all is called with the same
+	  ;; current-buffer as now
+	  ;; and we safe the value of collab-send-next by also
+	  ;; giving it as argument to run-at-time.
+	  ;; setting collab-send-next to nil indicates that a timer is
+	  ;; already scheduled - the only possibility now to
+	  ;; call collab-send-all is when this timer sets collab-send
+	  ;; next to the old value.
+	  (progn
+	    (run-at-time (time-to-seconds collab-send-delta) nil
+			 (lambda (b o) (with-current-buffer b
+					 (setq collab-send-next o)
+					 (collab-send-all)))
+			 (current-buffer)
+			 collab-send-next)
+	    (setq collab-send-next nil))
+	(loop for client hash-key of collab-client-hash do
+	      (collab-send client))
+	(setq collab-send-next (time-add (current-time) collab-send-delta)))))
 
 (defun collab-become-originator (id &optional excluded-client)
   (loop for client hash-key of collab-client-hash do
