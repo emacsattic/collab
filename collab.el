@@ -455,7 +455,8 @@ works with eq, not with equal"
 	  ;; setting collab-send-next to nil indicates that a timer is
 	  ;; already scheduled - the only possibility now to
 	  ;; call collab-send-all is when this timer sets collab-send
-	  ;; next to the old value.
+	  ;; next to the old value (i.e. only one timer at a
+	  ;; time is active (per buffer))
 	  (progn
 	    (run-at-time (time-to-seconds collab-send-delta) nil
 			 (lambda (b o) (with-current-buffer b
