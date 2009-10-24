@@ -23,84 +23,84 @@
 (eval-when-compile
   (require 'cl))
 
-(defstruct simacs-char id parent undertaker c type)
+(defstruct collab-char id parent undertaker c type)
 
-(defconst simacs-in-buffer 0
+(defconst collab-in-buffer 0
   "c is an insertable character and not deleted.")
-(defconst simacs-deleted 1
+(defconst collab-deleted 1
   "c is an insertable character and deleted.")
-(defconst simacs-del 2
+(defconst collab-del 2
   "c is the special character DEL (delete)")
-(defconst simacs-anchor-char 0
+(defconst collab-anchor-char 0
   "'Position' of the beginning of the text. If a character is inserted at
 position 1, the anchor-char is its parent character.")
-(defconst simacs-replay-delta 0.03)
-(defconst simacs-replay-direction 1)
-(defconst simacs-send-delta 0.33)
-(defvar simacs-last-send nil)
+(defconst collab-replay-delta 0.03)
+(defconst collab-replay-direction 1)
+(defconst collab-send-delta 0.33)
+(defvar collab-last-send nil)
 
-(defvar simacs-server-process nil)
-(defvar simacs-server-port 8000)
-(defvar simacs-clients nil)
-(defvar simacs-inhibit-sending nil)
-(defvar simacs-client-hash nil)
+(defvar collab-server-process nil)
+(defvar collab-server-port 8000)
+(defvar collab-clients nil)
+(defvar collab-inhibit-sending nil)
+(defvar collab-client-hash nil)
 
-(defvar simacs-char-hash nil
+(defvar collab-char-hash nil
   "All characters, even deleted characters and DEL special characters are stored here.
 The key is the id of the character.
-buffer-local for each buffer running simacs.")
-(defvar simacs-local-pc nil
+buffer-local for each buffer running collab.")
+(defvar collab-local-pc nil
   "Counter (pc = program counter) that counts all characters issued by this client.
-buffer-local for each buffer running simacs.")
-(defvar simacs-before-change-start nil
+buffer-local for each buffer running collab.")
+(defvar collab-before-change-start nil
   "buffer local")
-(defvar simacs-subsequent-before-change-calls nil
+(defvar collab-subsequent-before-change-calls nil
   "Sometimes before-change is called more than once in one change - this variable makes it
 possible to deal with that.
-buffer-local for each buffer running simacs.")
-(defvar simacs-deleted-string nil
+buffer-local for each buffer running collab.")
+(defvar collab-deleted-string nil
   "If the user deletes a part of the buffer, this variable stores it before the buffer change.
-buffer-local for each buffer running simacs.")
-(defconst simacs-id-buffer-preamble
-  "This buffer is created and used by simacs - please do not modify or kill.\n"
-  "String that appears at the beginning of each simacs-id-buffer.")
-(defconst simacs-id-buffer-offset
-  (string-bytes simacs-id-buffer-preamble)
-  "Number of bytes to ignore at the beginning of a simacs-id-buffer.")
+buffer-local for each buffer running collab.")
+(defconst collab-id-buffer-preamble
+  "This buffer is created and used by collab - please do not modify or kill.\n"
+  "String that appears at the beginning of each collab-id-buffer.")
+(defconst collab-id-buffer-offset
+  (string-bytes collab-id-buffer-preamble)
+  "Number of bytes to ignore at the beginning of a collab-id-buffer.")
 
-(defconst simacs-id-width 26)
-(defconst simacs-char-width (+ 2 (* 2 simacs-id-width)))
-(defconst simacs-pos0-id (make-string simacs-id-width ?0))
+(defconst collab-id-width 26)
+(defconst collab-char-width (+ 2 (* 2 collab-id-width)))
+(defconst collab-pos0-id (make-string collab-id-width ?0))
 
-(defvar simacs-next-id nil
+(defvar collab-next-id nil
   "buffer-local for each buffer.")
 
-(defun simacs-make-timestamp ()
+(defun collab-make-timestamp ()
   (apply 'format "%04x%04x%06d" (current-time)))
 
-(defun simacs-make-id (timestamp local-pc)
-  (or simacs-next-id
+(defun collab-make-id (timestamp local-pc)
+  (or collab-next-id
       (format "%s%06x%06x"
 	      timestamp local-pc
 	      (random #x1000000))))
 
-(defun simacs-before-change (start end)
-  (unless simacs-subsequent-before-change-calls
-    (setq simacs-deleted-string (buffer-substring start end) ;; preserve properties
-	  simacs-before-change-start start
-	  simacs-subsequent-before-change-calls t)))
+(defun collab-before-change (start end)
+  (unless collab-subsequent-before-change-calls
+    (setq collab-deleted-string (buffer-substring start end) ;; preserve properties
+	  collab-before-change-start start
+	  collab-subsequent-before-change-calls t)))
 
-(defun* simacs-after-change (start end lll)
-  (setq simacs-subsequent-before-change-calls nil)
+(defun* collab-after-change (start end lll)
+  (setq collab-subsequent-before-change-calls nil)
   (let* ((inserted-string (buffer-substring-no-properties start end))
-	 (timestamp (simacs-make-timestamp)))
-    (when (string= simacs-deleted-string inserted-string)
-      (return-from simacs-after-change))
+	 (timestamp (collab-make-timestamp)))
+    (when (string= collab-deleted-string inserted-string)
+      (return-from collab-after-change))
     ;; both deletion and insertion possible in one change (when in 
     ;; overwrite mode)! Therefore two conditionals (unless/when), not one
     ;; like if/cond (they have "mutually exclusive semantics").
     (unless (zerop lll) ;; deletion
-      (loop for deleted-id in (simacs-id-buffer-delete-n 
+      (loop for deleted-id in (collab-id-buffer-delete-n 
 			       ;; important for M-c (capitalize-word) etc.,
 			       ;; because the deleted/inserted (capitalized) string
 			       ;; might be smaller than reported by before-change
@@ -110,119 +110,119 @@ buffer-local for each buffer running simacs.")
 			       ;; (earlier Emacs versions are different: they delete
 			       ;; the whole word and insert the whole (modified) word
 			       ;; back in)
-			       (substring simacs-deleted-string
-					  (- start simacs-before-change-start)
-					  (+ lll (- start simacs-before-change-start))))
-	    for id = (simacs-make-id timestamp (incf simacs-local-pc))
+			       (substring collab-deleted-string
+					  (- start collab-before-change-start)
+					  (+ lll (- start collab-before-change-start))))
+	    for id = (collab-make-id timestamp (incf collab-local-pc))
 	    do
-	    (setf (simacs-char-type (gethash deleted-id simacs-char-hash)) simacs-deleted)
+	    (setf (collab-char-type (gethash deleted-id collab-char-hash)) collab-deleted)
 	    (puthash
 	     id
-	     (make-simacs-char :id id :parent deleted-id :c "dd" :type simacs-del)
-	     simacs-char-hash)
-	    (unless simacs-inhibit-sending
-	      (simacs-become-originator id))))
+	     (make-collab-char :id id :parent deleted-id :c "dd" :type collab-del)
+	     collab-char-hash)
+	    (unless collab-inhibit-sending
+	      (collab-become-originator id))))
     (when (< start end) ;; insertion
-      (simacs-add-insertion-properties start end timestamp)))
-  (simacs-send-all)) ;; package complete, send it away!
+      (collab-add-insertion-properties start end timestamp)))
+  (collab-send-all)) ;; package complete, send it away!
 
-(defun simacs-add-insertion-properties (start end timestamp)
+(defun collab-add-insertion-properties (start end timestamp)
   (loop for pos from start below end
 	for parent-pos = (1- pos)
-	for parent-id = (simacs-id-buffer-get-id parent-pos)
-	for id = (simacs-make-id timestamp (incf simacs-local-pc))
+	for parent-id = (collab-id-buffer-get-id parent-pos)
+	for id = (collab-make-id timestamp (incf collab-local-pc))
 	for c = (buffer-substring-no-properties pos (1+ pos))
 	do
 	  (puthash
 	   id
-	   (make-simacs-char :id id :parent parent-id :c c :type simacs-in-buffer)
-	   simacs-char-hash)
-	  (simacs-id-buffer-insert pos id)
-	  (unless simacs-inhibit-sending
-	    (simacs-become-originator id))))
+	   (make-collab-char :id id :parent parent-id :c c :type collab-in-buffer)
+	   collab-char-hash)
+	  (collab-id-buffer-insert pos id)
+	  (unless collab-inhibit-sending
+	    (collab-become-originator id))))
 
-(defun simacs-add-hooks ()
+(defun collab-add-hooks ()
   ;; make hooks buffer-local
-  (add-hook 'after-change-functions 'simacs-after-change nil t)
-  (add-hook 'before-change-functions 'simacs-before-change nil t))
+  (add-hook 'after-change-functions 'collab-after-change nil t)
+  (add-hook 'before-change-functions 'collab-before-change nil t))
 
-(defun simacs-remove-hooks ()
+(defun collab-remove-hooks ()
   ;; only remove buffer-local hooks
-  (remove-hook 'before-change-functions 'simacs-before-change t)
-  (remove-hook 'after-change-functions 'simacs-after-change t))
+  (remove-hook 'before-change-functions 'collab-before-change t)
+  (remove-hook 'after-change-functions 'collab-after-change t))
 
-(defun simacs ()
+(defun collab ()
   (interactive)
-  (set (make-local-variable 'simacs-char-hash) (make-hash-table :test 'equal
+  (set (make-local-variable 'collab-char-hash) (make-hash-table :test 'equal
 								:size 10000))
-  (set (make-local-variable 'simacs-local-pc) 0)
-  (set (make-local-variable 'simacs-subsequent-before-change-calls) nil)
-  (set (make-local-variable 'simacs-deleted-string) nil)
-  (set (make-local-variable 'simacs-next-id) nil)
-  (set (make-local-variable 'simacs-inhibit-sending) nil)
-  (set (make-local-variable 'simacs-client-hash) (make-hash-table :test 'eq))
-  (set (make-local-variable 'simacs-before-change-start) nil)
-  (set (make-local-variable 'simacs-last-send) (current-time))
+  (set (make-local-variable 'collab-local-pc) 0)
+  (set (make-local-variable 'collab-subsequent-before-change-calls) nil)
+  (set (make-local-variable 'collab-deleted-string) nil)
+  (set (make-local-variable 'collab-next-id) nil)
+  (set (make-local-variable 'collab-inhibit-sending) nil)
+  (set (make-local-variable 'collab-client-hash) (make-hash-table :test 'eq))
+  (set (make-local-variable 'collab-before-change-start) nil)
+  (set (make-local-variable 'collab-last-send) (current-time))
   ;; make the buffer-local variables immune against a major mode change:
-  (put 'simacs-char-hash 'permanent-local t)
-  (put 'simacs-local-pc 'permanent-local t)
-  (put 'simacs-subsequent-before-change-calls 'permanent-local t)
-  (put 'simacs-before-change-start 'permanent-local t)
-  (put 'simacs-deleted-string 'permanent-local t)
-  (put 'simacs-next-id 'permanent-local t)
-  (put 'simacs-inhibit-sending 'permanent-local t)
-  (put 'simacs-client-hash 'permanent-local t)
-  (put 'simacs-last-send 'permanent-local t)
+  (put 'collab-char-hash 'permanent-local t)
+  (put 'collab-local-pc 'permanent-local t)
+  (put 'collab-subsequent-before-change-calls 'permanent-local t)
+  (put 'collab-before-change-start 'permanent-local t)
+  (put 'collab-deleted-string 'permanent-local t)
+  (put 'collab-next-id 'permanent-local t)
+  (put 'collab-inhibit-sending 'permanent-local t)
+  (put 'collab-client-hash 'permanent-local t)
+  (put 'collab-last-send 'permanent-local t)
 
-  (simacs-add-hooks)
+  (collab-add-hooks)
   (let ((saved-buffer-chars-modified-tick (buffer-chars-modified-tick))
 	(saved-buffer-modified-p (buffer-modified-p)))
-    (simacs-add-insertion-properties (point-min) (point-max) (simacs-make-timestamp))
+    (collab-add-insertion-properties (point-min) (point-max) (collab-make-timestamp))
     ;; if modified flag of buffer was nil before and only
     ;; text property changes occured then don't treat this as modification
     (if (and (not saved-buffer-modified-p)                       
 	     (= saved-buffer-chars-modified-tick (buffer-chars-modified-tick)))
 	(set-buffer-modified-p nil)))
-;;  (simacs-server-start)
+;;  (collab-server-start)
 ;;  (run-at-time t 3 (lambda (b)
 ;;		     (with-current-buffer b
-;;		       (simacs-send-all))) (current-buffer))
+;;		       (collab-send-all))) (current-buffer))
 )
 
-(defun simacs-replay ()
+(defun collab-replay ()
   (interactive)
-  ;; simacs-char-hash (and simacs-char-hash-tmp, which is only a reference
+  ;; collab-char-hash (and collab-char-hash-tmp, which is only a reference
   ;; to it) can grow during replay, as new input might arrive
   ;; during sit-for intervals. But the sorting of ids at the
   ;; beginning of this function has the effect of taking a snapshot,
   ;; i.e. all input arriving after snapshotting is not replayed
-  (let ((history (sort (loop for k being the hash-key of simacs-char-hash collect k) 'string<))
-	(simacs-char-hash-tmp simacs-char-hash))
-    (with-current-buffer (generate-new-buffer "simacs-replay")
+  (let ((history (sort (loop for k being the hash-key of collab-char-hash collect k) 'string<))
+	(collab-char-hash-tmp collab-char-hash))
+    (with-current-buffer (generate-new-buffer "collab-replay")
       (with-selected-window (display-buffer (current-buffer))
-	(simacs)
-	(loop with simacs-inhibit-sending = t
+	(collab)
+	(loop with collab-inhibit-sending = t
 	      with inhibit-read-only = t ;; paranoia
 	      for id in history
-	      for char = (gethash id simacs-char-hash-tmp)
-	      for parent-position = (simacs-id-buffer-get-pos (simacs-char-parent char))
-	      for simacs-next-id = id
+	      for char = (gethash id collab-char-hash-tmp)
+	      for parent-position = (collab-id-buffer-get-pos (collab-char-parent char))
+	      for collab-next-id = id
 	      do
-	      (sit-for simacs-replay-delta)
-	      (if (= (simacs-char-type char) simacs-del) ;; deletion
+	      (sit-for collab-replay-delta)
+	      (if (= (collab-char-type char) collab-del) ;; deletion
 		  (progn (goto-char parent-position)
 			 (delete-char 1))
 		(goto-char (1+ parent-position)) ;; insertion
-		(insert (simacs-char-c char))))))))
+		(insert (collab-char-c char))))))))
 
-(defun simacs-replay-fun (replay-buffer simacs-char-hash-tmp i h ovl)
+(defun collab-replay-fun (replay-buffer collab-char-hash-tmp i h ovl)
   "the name should be changed and get a buffer prefix"
   (when (or (= i (length h)) (= i -1))
     (global-set-key "+" 'self-insert-command)
     (global-set-key "-" 'self-insert-command)
     (global-set-key "<" 'self-insert-command)
     (global-set-key ">" 'self-insert-command)
-    (simacs-replay-forward)
+    (collab-replay-forward)
     (message "%s" i))
 
   (when (and (>= i 0) (< i (length h)))
@@ -230,70 +230,70 @@ buffer-local for each buffer running simacs.")
       (save-excursion
 	(let* ((id (aref h i))
 	       (inhibit-read-only t)
-	       (simacs-inhibit-sending t)
-	       (char (gethash id simacs-char-hash-tmp))
-	       (parent-position (if (and (= -1 simacs-replay-direction)
-					 (= (simacs-char-type char) simacs-del))
+	       (collab-inhibit-sending t)
+	       (char (gethash id collab-char-hash-tmp))
+	       (parent-position (if (and (= -1 collab-replay-direction)
+					 (= (collab-char-type char) collab-del))
 				    (progn
-				      (simacs-id-buffer-get-pos
-				       (simacs-char-undertaker
-					(gethash (simacs-char-parent char)
-						 simacs-char-hash-tmp))))
-				  (simacs-id-buffer-get-pos (simacs-char-parent char))))
-	       (simacs-next-id id)) 
+				      (collab-id-buffer-get-pos
+				       (collab-char-undertaker
+					(gethash (collab-char-parent char)
+						 collab-char-hash-tmp))))
+				  (collab-id-buffer-get-pos (collab-char-parent char))))
+	       (collab-next-id id)) 
 	                            ;; if backwards:... -> don't set!
-	  (when (= 1 simacs-replay-direction)
-	    (if (= (simacs-char-type char) simacs-del) ;; deletion
+	  (when (= 1 collab-replay-direction)
+	    (if (= (collab-char-type char) collab-del) ;; deletion
 		(progn 
-		  (setf (simacs-char-undertaker (gethash (simacs-char-parent char)
-							 simacs-char-hash-tmp))
-			(simacs-id-buffer-get-id (1- parent-position)))
+		  (setf (collab-char-undertaker (gethash (collab-char-parent char)
+							 collab-char-hash-tmp))
+			(collab-id-buffer-get-id (1- parent-position)))
 		  (goto-char parent-position)
 		  (delete-char 1)
 		  (move-overlay ovl parent-position (1+ parent-position)))
 	      (goto-char (1+ parent-position)) ;; insertion
-	      (insert (simacs-char-c char))
+	      (insert (collab-char-c char))
 	      (move-overlay ovl (+ 2 parent-position) (+ 3 parent-position))))
-	  (when (= -1 simacs-replay-direction)
+	  (when (= -1 collab-replay-direction)
 	    (let ((inhibit-modification-hooks t))
-	      (if (= (simacs-char-type char) simacs-del)
+	      (if (= (collab-char-type char) collab-del)
 		  (progn ;; undo deletion: insert parent of del-char after undertaker:-)
 		    ;; parent-position holds undertaker-position...
 		    (goto-char (1+ parent-position))
 		    (insert (propertize
-			     (simacs-char-c (gethash (simacs-char-parent char)
-						     simacs-char-hash-tmp))
-			     'simacs-id (simacs-char-parent char)))
+			     (collab-char-c (gethash (collab-char-parent char)
+						     collab-char-hash-tmp))
+			     'collab-id (collab-char-parent char)))
 		    (move-overlay ovl (+ 2 parent-position) (+ 3 parent-position)))
 		;; undo insertion
 		(goto-char (1+ parent-position))
 		(delete-char 1)
 		(move-overlay ovl (1+ parent-position) (+ 2 parent-position)))))))))
-  (run-at-time simacs-replay-delta
-	       nil 'simacs-replay-fun replay-buffer simacs-char-hash-tmp
-	       (+ simacs-replay-direction i) h ovl))
+  (run-at-time collab-replay-delta
+	       nil 'collab-replay-fun replay-buffer collab-char-hash-tmp
+	       (+ collab-replay-direction i) h ovl))
 
-(defun simacs-increase-replay-speed ()
+(defun collab-increase-replay-speed ()
   "sollte buffer-local sein!"
   (interactive)
-  (setq simacs-replay-delta (/ simacs-replay-delta 2)))
+  (setq collab-replay-delta (/ collab-replay-delta 2)))
 
-(defun simacs-decrease-replay-speed ()
+(defun collab-decrease-replay-speed ()
   "sollte buffer-local sein!"
   (interactive)
-  (setq simacs-replay-delta (* simacs-replay-delta 2)))
+  (setq collab-replay-delta (* collab-replay-delta 2)))
 
-(defun simacs-replay-backward ()
+(defun collab-replay-backward ()
   (interactive)
-  (setq simacs-replay-direction -1)
-  (message "simacs replay-backward"))
+  (setq collab-replay-direction -1)
+  (message "collab replay-backward"))
 
-(defun simacs-replay-forward ()
+(defun collab-replay-forward ()
   (interactive)
-  (setq simacs-replay-direction 1)
-  (message "simacs replay-forward"))
+  (setq collab-replay-direction 1)
+  (message "collab replay-forward"))
 
-(defun simacs-replay-async ()
+(defun collab-replay-async ()
   (interactive)
   ;; some smaller problems:
   ;; - spaces necessary at the end of a buffer in order to get overlays 
@@ -306,16 +306,16 @@ buffer-local for each buffer running simacs.")
   ;;   whole line)
   ;; - there is a mode that displays point of more than one user - how
   ;;   does it work?
-  ;; - simacs-char-hash (and simacs-char-hash-tmp, which is only a reference
+  ;; - collab-char-hash (and collab-char-hash-tmp, which is only a reference
   ;;   to it) can grow during replay, as new input might arrive
   ;;   during sit-for intervals. But the sorting of ids at the beginning
   ;;   of this function has the effect of taking a snapshot,
   ;;   i.e. all input arriving after snapshotting is not replayed
   (let* ((history (apply 'vector
 			 (sort
-			  (loop for k being the hash-key of simacs-char-hash collect k) 'string<)))
-	 (simacs-char-hash-tmp simacs-char-hash)
-	 (replay-buffer (generate-new-buffer "simacs-replay"))
+			  (loop for k being the hash-key of collab-char-hash collect k) 'string<)))
+	 (collab-char-hash-tmp collab-char-hash)
+	 (replay-buffer (generate-new-buffer "collab-replay"))
 	 (mode major-mode)
 	 (ovl (make-overlay 1 2 replay-buffer t)))
     (display-buffer replay-buffer)
@@ -334,89 +334,89 @@ buffer-local for each buffer running simacs.")
       (overlay-put ovl 'font-lock-face '(:background "orange"))
       (setq buffer-undo-list t
 	    buffer-read-only t)
-      (simacs))
-    (global-set-key "+" 'simacs-increase-replay-speed)
-    (global-set-key "-" 'simacs-decrease-replay-speed)
-    (global-set-key ">" 'simacs-replay-forward)
-    (global-set-key "<" 'simacs-replay-backward)
-    (simacs-replay-fun replay-buffer simacs-char-hash-tmp 0 history ovl)))
+      (collab))
+    (global-set-key "+" 'collab-increase-replay-speed)
+    (global-set-key "-" 'collab-decrease-replay-speed)
+    (global-set-key ">" 'collab-replay-forward)
+    (global-set-key "<" 'collab-replay-backward)
+    (collab-replay-fun replay-buffer collab-char-hash-tmp 0 history ovl)))
 
 ;; id-buffer
-(defun simacs-id-buffer-get-pos (id)
-  "first looks up the char in simacs-char-hash to get the id
+(defun collab-id-buffer-get-pos (id)
+  "first looks up the char in collab-char-hash to get the id
 that was used when the char was stored - because text-property-any
 works with eq, not with equal"
-  (if (string= simacs-pos0-id id)
+  (if (string= collab-pos0-id id)
       0
-    (text-property-any (point-min) (point-max) 'simacs-id
-		       (simacs-char-id (gethash id simacs-char-hash)))))
+    (text-property-any (point-min) (point-max) 'collab-id
+		       (collab-char-id (gethash id collab-char-hash)))))
 
-(defun simacs-id-buffer-get-id (pos)
+(defun collab-id-buffer-get-id (pos)
   (if (zerop pos)
-      simacs-pos0-id
-    (get-text-property pos 'simacs-id)))
+      collab-pos0-id
+    (get-text-property pos 'collab-id)))
 
-(defun simacs-id-buffer-insert (pos id)
+(defun collab-id-buffer-insert (pos id)
   (let ((buffer-undo-list t)
 	(inhibit-read-only t))
-    (add-text-properties pos (1+ pos) (list 'simacs-id id))))
+    (add-text-properties pos (1+ pos) (list 'collab-id id))))
 
-(defun simacs-id-buffer-delete-n (deleted-string)
+(defun collab-id-buffer-delete-n (deleted-string)
   (loop for i from 0 below (length deleted-string)
-	collect (get-text-property i 'simacs-id deleted-string)))
+	collect (get-text-property i 'collab-id deleted-string)))
 
 ;; char abstraction
-(defun simacs-char-get-id (simacs-char)
-  (car simacs-char))
+(defun collab-char-get-id (collab-char)
+  (car collab-char))
 
-(defun simacs-char-get-parent (simacs-char)
-  (cadr simacs-char))
+(defun collab-char-get-parent (collab-char)
+  (cadr collab-char))
 
-(defun simacs-char-get-c (simacs-char)
-  (nth 2 simacs-char))
+(defun collab-char-get-c (collab-char)
+  (nth 2 collab-char))
 
-(defun simacs-char-create (id parent c)
+(defun collab-char-create (id parent c)
   (list id parent c))
 
 ;; external interface (for characters arriving from another peer)
-(defun simacs-get-ack (client)
-  (car (gethash client simacs-client-hash)))
+(defun collab-get-ack (client)
+  (car (gethash client collab-client-hash)))
 
-(defun simacs-get-pending (client)
-  (cadr (gethash client simacs-client-hash)))
+(defun collab-get-pending (client)
+  (cadr (gethash client collab-client-hash)))
 
-(defun simacs-get-was-pending (client)
-  (nth 2 (gethash client simacs-client-hash)))
+(defun collab-get-was-pending (client)
+  (nth 2 (gethash client collab-client-hash)))
 
-(defun simacs-char-in-was-pending-p (client id)
-  (let ((was-pending (simacs-get-was-pending client)))
+(defun collab-char-in-was-pending-p (client id)
+  (let ((was-pending (collab-get-was-pending client)))
     (gethash id was-pending)))
 
-(defun simacs-char-in-pending-p (client id)
-  (let ((pending (simacs-get-pending client)))
+(defun collab-char-in-pending-p (client id)
+  (let ((pending (collab-get-pending client)))
     (gethash id pending)))
 
-(defun simacs-add-char-to-pending (client id)
-  (let ((pending (simacs-get-pending client)))
+(defun collab-add-char-to-pending (client id)
+  (let ((pending (collab-get-pending client)))
     (assert (not (gethash id pending)))
     (puthash id 1 pending)))
 
-(defun simacs-add-char-to-ack (client id)
-  (let ((ack (simacs-get-ack client)))
+(defun collab-add-char-to-ack (client id)
+  (let ((ack (collab-get-ack client)))
 ;;    (assert (not (gethash id ack)))
     (puthash id 1 ack)))
 
-(defun simacs-add-char-to-was-pending (client id)
-  (let ((was-pending (simacs-get-was-pending client)))
+(defun collab-add-char-to-was-pending (client id)
+  (let ((was-pending (collab-get-was-pending client)))
     (assert (not (gethash id was-pending)))
     (puthash id 1 was-pending)))
 
-(defun simacs-remove-char-from-pending (client id)
-  (let ((pending (simacs-get-pending client)))
+(defun collab-remove-char-from-pending (client id)
+  (let ((pending (collab-get-pending client)))
     (assert (gethash id pending))
     (remhash id pending)))
 
-(defun simacs-send (client)
+(defun collab-send (client)
   "sends everything from ack and pending to client in sorted form. Erases ack."
 ;;  (loop for id being the hash-keys of pending using (hash-values flag)
 ;;	collect
@@ -425,154 +425,154 @@ works with eq, not with equal"
 ;;            e.g. init: 2
 ;;            if uneven: don't send
 ;;            if even: send
-;;	(simacs-char-create ...)))
+;;	(collab-char-create ...)))
   (let ((package (loop with pending-ids = (loop for k being the hash-key of
-						(simacs-get-pending client) collect k)
+						(collab-get-pending client) collect k)
 		       with ack-ids = (loop for k being the hash-key of
-					    (simacs-get-ack client) collect k)
+					    (collab-get-ack client) collect k)
 		       with all-ids = (sort (append pending-ids ack-ids) 'string<)
 		       for id in all-ids
-		       for sc = (gethash id simacs-char-hash)
+		       for sc = (gethash id collab-char-hash)
 		       collect
-		       (simacs-char-create id
-					   (simacs-char-parent sc)
-					   (if (= simacs-del (simacs-char-type sc))
+		       (collab-char-create id
+					   (collab-char-parent sc)
+					   (if (= collab-del (collab-char-type sc))
 					       "dd"
-					     (concat "i" (simacs-char-c sc)))))))
+					     (concat "i" (collab-char-c sc)))))))
     ;; send package to client
     (when (> (length package) 0) ;; don't send empty packages
       (send-string client (prin1-to-string package))
-      (clrhash (simacs-get-ack client)))))
+      (clrhash (collab-get-ack client)))))
 
-(defun simacs-send-all ()
+(defun collab-send-all ()
   (when (> (float-time
-	    (time-subtract (current-time) simacs-last-send))
-	   simacs-send-delta)
-    (loop for client hash-key of simacs-client-hash do
-	  (simacs-send client))
-    (setq simacs-last-send (current-time))))
+	    (time-subtract (current-time) collab-last-send))
+	   collab-send-delta)
+    (loop for client hash-key of collab-client-hash do
+	  (collab-send client))
+    (setq collab-last-send (current-time))))
 
-(defun simacs-become-originator (id &optional excluded-client)
-  (loop for client hash-key of simacs-client-hash do
+(defun collab-become-originator (id &optional excluded-client)
+  (loop for client hash-key of collab-client-hash do
 	(unless (and excluded-client (eq excluded-client client))
-	  (assert (not (simacs-char-in-pending-p client id)))
-	  (simacs-add-char-to-pending client id))))
+	  (assert (not (collab-char-in-pending-p client id)))
+	  (collab-add-char-to-pending client id))))
 
-(defun simacs-deal-with-package (conn package)
-  (with-current-buffer (process-get conn 'simacs-buffer)
+(defun collab-deal-with-package (conn package)
+  (with-current-buffer (process-get conn 'collab-buffer)
     (loop for c in package do
-	  (simacs-receive-char
+	  (collab-receive-char
 	   conn
-	   (simacs-char-get-id c)
-	   (simacs-char-get-parent c)
-	   (simacs-char-get-c c)))))
+	   (collab-char-get-id c)
+	   (collab-char-get-parent c)
+	   (collab-char-get-c c)))))
 
-(defun simacs-receive-char (client id parent c)
-  (if (simacs-char-in-pending-p client id)
+(defun collab-receive-char (client id parent c)
+  (if (collab-char-in-pending-p client id)
       (progn
-	(simacs-add-char-to-was-pending client id)
-	(simacs-remove-char-from-pending client id)) ;; interpret as acknowledge
-    (unless (simacs-char-in-was-pending-p client id) ;; only ack to client
+	(collab-add-char-to-was-pending client id)
+	(collab-remove-char-from-pending client id)) ;; interpret as acknowledge
+    (unless (collab-char-in-was-pending-p client id) ;; only ack to client
       ;; if current client wasn't originator
-      (simacs-add-char-to-ack client id))
-    (unless (gethash id simacs-char-hash) ;; unless already processed
+      (collab-add-char-to-ack client id))
+    (unless (gethash id collab-char-hash) ;; unless already processed
       ;; process it
-      (simacs-process-char id parent c)
+      (collab-process-char id parent c)
       ;; and relay it to all other clients (except originator client, which gets an ack reply)
-      (simacs-become-originator id client))))
+      (collab-become-originator id client))))
 
-(defun simacs-process-char (id parent c)
+(defun collab-process-char (id parent c)
   (assert (and (stringp c) (= 2 (length c)) (or (= ?i (aref c 0)) (string= "dd" c)))
 	  nil (format "mein fehler: id:%s parent:%s c:%s" id parent c))
   ;; add: also check, id and parent for sanity
   (if (string= "dd" c) ;; deletion
-      (simacs-process-delete id parent)
-    (simacs-process-insert id parent c))) ;; insertion
+      (collab-process-delete id parent)
+    (collab-process-insert id parent c))) ;; insertion
 
-(defun simacs-process-delete (id parent)
-  (if (= simacs-deleted (simacs-char-type
-			 (gethash parent simacs-char-hash))) ;; if parent already deleted
-      (puthash id (make-simacs-char :id id :parent parent :c "dd" :type simacs-del)
-	       simacs-char-hash) ;; then just insert it in char-hash
-    (let* ((start (simacs-id-buffer-get-pos parent))
+(defun collab-process-delete (id parent)
+  (if (= collab-deleted (collab-char-type
+			 (gethash parent collab-char-hash))) ;; if parent already deleted
+      (puthash id (make-collab-char :id id :parent parent :c "dd" :type collab-del)
+	       collab-char-hash) ;; then just insert it in char-hash
+    (let* ((start (collab-id-buffer-get-pos parent))
 	   (end (1+ start))
-	   (simacs-inhibit-sending t)
+	   (collab-inhibit-sending t)
 	   (inhibit-read-only t)
-	   (simacs-next-id id))
+	   (collab-next-id id))
       (delete-region start end)))) ;; inserts delete character in char-hash with right id
                                    ;; via before change / after change functions
 
-(defun simacs-process-insert (id parent c)
+(defun collab-process-insert (id parent c)
   ;; calculate here where to insert
   ;; also has to deal with the case that parent
   ;; is deleted
   (save-excursion
-    (goto-char (1+ (simacs-id-buffer-get-pos parent)))
-    (let ((simacs-inhibit-sending t)
+    (goto-char (1+ (collab-id-buffer-get-pos parent)))
+    (let ((collab-inhibit-sending t)
 	  (inhibit-read-only t)
-	  (simacs-next-id id))
+	  (collab-next-id id))
       (insert (substring c 1)))))
 
 ;; network code
-(defun simacs-server-start ()
+(defun collab-server-start ()
   "starts a server process (if the process does not already exist)"
   (interactive)
-  (if (process-status "simacs-server")
-      (message "simacs-server already running, listening on port %i " simacs-server-port)
-    (make-network-process :name "simacs-server"
-			  :service simacs-server-port
+  (if (process-status "collab-server")
+      (message "collab-server already running, listening on port %i " collab-server-port)
+    (make-network-process :name "collab-server"
+			  :service collab-server-port
 			  :family 'ipv4
-			  :sentinel 'simacs-server-sentinel
-			  :filter 'simacs-server-filter
+			  :sentinel 'collab-server-sentinel
+			  :filter 'collab-server-filter
 			  :server t
 			  :coding 'utf-8)
-    (message "simacs-server started, listening on port %i " simacs-server-port)
-    (setq simacs-clients ())))
+    (message "collab-server started, listening on port %i " collab-server-port)
+    (setq collab-clients ())))
 
-(defun simacs-make-connection-buffer (conn)
+(defun collab-make-connection-buffer (conn)
   "Makes a read only buffer with an initial
 string in it and sets it as process buffer for connection conn."
-  (set-process-buffer conn (generate-new-buffer " simacs-connection-buffer"))
-  (process-put conn 'simacs-start-read-marker (make-marker))
+  (set-process-buffer conn (generate-new-buffer " collab-connection-buffer"))
+  (process-put conn 'collab-start-read-marker (make-marker))
 
   (with-current-buffer (process-buffer conn)
-    (insert simacs-id-buffer-preamble)
+    (insert collab-id-buffer-preamble)
     (set-marker (process-mark conn) (point))
-    (set-marker (process-get conn 'simacs-start-read-marker) (point))
+    (set-marker (process-get conn 'collab-start-read-marker) (point))
     (setq buffer-read-only t)))
 
-(defun simacs-connect (ip-address buffer-name)
+(defun collab-connect (ip-address buffer-name)
   (interactive "sIP address (default: 127.0.0.1): 
 sBuffer name on %s (default: *scratch*): ")
-  (unless simacs-char-hash
-    (simacs))
+  (unless collab-char-hash
+    (collab))
   (when (string= "" ip-address)
     (setq ip-address "127.0.0.1"))
   (when (string= "" buffer-name)
     (setq buffer-name "*scratch*"))
-  (let ((conn (make-network-process :name "simacs-connection"
+  (let ((conn (make-network-process :name "collab-connection"
 				    :host ip-address
-				    :service simacs-server-port
+				    :service collab-server-port
 				    :family 'ipv4
-				    :filter 'simacs-client-filter
+				    :filter 'collab-client-filter
 				    :coding 'utf-8)))
     ;; do this here, because when client filter function is called the
     ;; value of (current-buffer) could have changed
-    (process-put conn 'simacs-buffer (current-buffer))
-    (simacs-make-connection-buffer conn)
+    (process-put conn 'collab-buffer (current-buffer))
+    (collab-make-connection-buffer conn)
     (send-string conn (prin1-to-string (format "REQ: %sREQ_END" buffer-name)))))
 
-(defun simacs-terminate-all-network-connections ()
+(defun collab-terminate-all-network-connections ()
   (interactive)
   (mapc 'delete-process (process-list)))
 
-(defun simacs-server-stop ()
-  "stops the simacs server process (if existing)"
+(defun collab-server-stop ()
+  "stops the collab server process (if existing)"
   (interactive)
-  (while simacs-clients
-    (delete-process (car simacs-clients))
-    (pop simacs-clients))
-  (delete-process "simacs-server"))
+  (while collab-clients
+    (delete-process (car collab-clients))
+    (pop collab-clients))
+  (delete-process "collab-server"))
 
 (defmacro delq-1 (e l)
   "Does (delq e l) and sets l to the result. l can be any setf-able place"
@@ -583,81 +583,81 @@ sBuffer name on %s (default: *scratch*): ")
   "(delq-1 e l) and returns t if l changed, nil otherwise"
   `(> (length ,l) (length (delq-1 ,e ,l))))
   
-(defun simacs-server-sentinel (proc msg)
-  (if (string= "simacs-server" (process-name proc))
-      (message "simacs-server stopped.")
-    (if (delq-p proc simacs-clients)
+(defun collab-server-sentinel (proc msg)
+  (if (string= "collab-server" (process-name proc))
+      (message "collab-server stopped.")
+    (if (delq-p proc collab-clients)
 	(message "client %s disconnected" proc)
-      (push proc simacs-clients)
-      (simacs-make-connection-buffer proc))))
+      (push proc collab-clients)
+      (collab-make-connection-buffer proc))))
 
-(defun simacs-deal-with-buffer-request-2 (requested-buffer)
-  "return value: 1: success (buffer exists and is running simacs)
+(defun collab-deal-with-buffer-request-2 (requested-buffer)
+  "return value: 1: success (buffer exists and is running collab)
 -1: failure: buffer does not exist
--2: failure: buffer exists but is not running simacs"
+-2: failure: buffer exists but is not running collab"
   (cond ((not requested-buffer) -1)
-	((not (buffer-local-value 'simacs-char-hash requested-buffer)) -2)
+	((not (buffer-local-value 'collab-char-hash requested-buffer)) -2)
 	(t 1)))
 
-(defun simacs-deal-with-buffer-request-1 (conn requested-buffer-name)
-  (let* ((replies '(( 1 . "ACK: Buffer %s exists at peer and is running simacs.ACK_END")
+(defun collab-deal-with-buffer-request-1 (conn requested-buffer-name)
+  (let* ((replies '(( 1 . "ACK: Buffer %s exists at peer and is running collab.ACK_END")
 		    (-1 . "NACK: Buffer %s does not exist at peer.NACK_END")
-		    (-2 . "NACK: Buffer %s exists at peer but not running simacs.NACK_END")))
+		    (-2 . "NACK: Buffer %s exists at peer but not running collab.NACK_END")))
 	 (requested-buffer (get-buffer requested-buffer-name))
-	 (reply-number (simacs-deal-with-buffer-request-2 requested-buffer))
+	 (reply-number (collab-deal-with-buffer-request-2 requested-buffer))
 	 (reply (cdr (assq reply-number replies))))
     (when (= 1 reply-number)
       ;; handshake was successful
-      (process-put conn 'simacs-buffer requested-buffer)
-      (process-put conn 'simacs-msg-buf "")
+      (process-put conn 'collab-buffer requested-buffer)
+      (process-put conn 'collab-msg-buf "")
       (with-current-buffer requested-buffer
 	;; can be substituted with only one hash table
 	(puthash conn (list (make-hash-table :test 'equal)
 			    (make-hash-table :test 'equal)
 			    (make-hash-table :test 'equal))
-		 simacs-client-hash)))
+		 collab-client-hash)))
     (send-string conn (prin1-to-string (format reply requested-buffer-name)))))
 
-(defun simacs-deal-with-buffer-request (conn request-string)
+(defun collab-deal-with-buffer-request (conn request-string)
   (when (string-match "^\\(REQ: \\(.*\\)REQ_END\\)" request-string)
-    (simacs-deal-with-buffer-request-1 conn (match-string 2 request-string))))
+    (collab-deal-with-buffer-request-1 conn (match-string 2 request-string))))
   
-(defun simacs-read-msg (conn msg string-function cons-function)
+(defun collab-read-msg (conn msg string-function cons-function)
   "writes msg to connection buffer and tries to read from it
 string-function and cons-function are handlers: if the
 result of the read is a string, string-function is called with
 conn and result as an argument. If the result is a cons cell, cons-function
 is called with conn and result as an argument."
-  (simacs-update-process-buffer conn msg)
+  (collab-update-process-buffer conn msg)
   (let (read-result)
-    (while (setq read-result (simacs-read-from-process-buffer conn))
+    (while (setq read-result (collab-read-from-process-buffer conn))
       (cond
        ((stringp read-result)
 	(funcall string-function conn read-result))
        ((consp read-result)
 	(funcall cons-function conn read-result))))))
 
-(defun simacs-server-filter (conn msg)
-  (simacs-read-msg conn
+(defun collab-server-filter (conn msg)
+  (collab-read-msg conn
 		   msg
-		   'simacs-deal-with-buffer-request
-		   'simacs-deal-with-package))
+		   'collab-deal-with-buffer-request
+		   'collab-deal-with-package))
 
-(defun simacs-update-process-buffer (conn msg)
+(defun collab-update-process-buffer (conn msg)
   (with-current-buffer (process-buffer conn)
     (goto-char (process-mark conn))
     (let ((inhibit-read-only t))
       (insert msg)
       (set-marker (process-mark conn) (point)))))
 
-(defun simacs-read-from-process-buffer (conn)
+(defun collab-read-from-process-buffer (conn)
   "only return something if either list of lists or flat string,
 return nil otherwise"
   (with-current-buffer (process-buffer conn)
-    ;; only advance simacs-start-read-marker if read successful,
+    ;; only advance collab-start-read-marker if read successful,
     ;; else try after next insert into the process buffer to read
     ;; again from this position
-    (let* ((start-read-marker (process-get conn 'simacs-start-read-marker))
+    (let* ((start-read-marker (process-get conn 'collab-start-read-marker))
 	   (saved-position (marker-position start-read-marker))
 	   (read-result (condition-case nil
 			    (read start-read-marker)
@@ -670,32 +670,32 @@ return nil otherwise"
 	(set-marker start-read-marker saved-position)
 	nil))))
 
-(defun simacs-client-filter (conn msg)
-  (simacs-read-msg conn
+(defun collab-client-filter (conn msg)
+  (collab-read-msg conn
 		   msg
-		   'simacs-deal-with-ack
-		   'simacs-deal-with-package))
+		   'collab-deal-with-ack
+		   'collab-deal-with-package))
 
-(defun simacs-deal-with-ack (conn ack-string)
+(defun collab-deal-with-ack (conn ack-string)
   (when (string-match "^\\(ACK: \\(.*\\)ACK_END\\)" ack-string)
-    (with-current-buffer (process-get conn 'simacs-buffer)
+    (with-current-buffer (process-get conn 'collab-buffer)
       (puthash conn (list (make-hash-table :test 'equal)
 			  (make-hash-table :test 'equal)
 			  (make-hash-table :test 'equal))
-	       simacs-client-hash)
+	       collab-client-hash)
       (message "client: handshake ok (%s)" (match-string 2 msg))))
   (when (string-match "^\\(NACK: \\(.*\\)NACK_END\\)" msg)
     (message "client: handshake not ok (%s)" (match-string 2 msg))
     (delete-process conn)))
 		  
-(defun simacs-list-connections ()
+(defun collab-list-connections ()
   "List the connections for this buffer."
   (interactive)
-  (message "%s" (loop for k hash-key of simacs-client-hash collect k)))
+  (message "%s" (loop for k hash-key of collab-client-hash collect k)))
 
-(defun simacs-kill-all-replay-buffers ()
+(defun collab-kill-all-replay-buffers ()
   (interactive)
   (mapc 'kill-buffer
 	(remove-if-not (lambda (b)
-			 (string-match "simacs-replay" (buffer-name b)))
+			 (string-match "collab-replay" (buffer-name b)))
 		       (buffer-list))))
