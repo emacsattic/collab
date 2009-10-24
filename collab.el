@@ -101,15 +101,15 @@ buffer-local for each buffer running simacs.")
     ;; like if/cond (they have "mutually exclusive semantics").
     (unless (zerop lll) ;; deletion
       (loop for deleted-id in (simacs-id-buffer-delete-n 
-			       ;; wichtig für M-c, denn der eigtl. gelöschte
-			       ;; String (und der dann insertede kann kleiner
-			       ;; sein als von before-change gemeldet.
-			       ;; Bsp: blubber -> Blubber
-			       ;; before-change meldete, dass ganz blubber
-			       ;; gelöscht, bei Emacs 23 wird aber nur das erste
-			       ;; b gelöscht (frühere Emacs-Versionen machen das
-			       ;; anders: das ganze Wort löschen, das ganze wieder
-			       ;; einfügen).
+			       ;; important for M-c (capitalize-word) etc.,
+			       ;; because the deleted/inserted (capitalized) string
+			       ;; might be smaller than reported by before-change
+			       ;; example: blubber -> Blubber
+			       ;; before-change says that "blubber" is deleted
+			       ;; but Emacs 23 only deletes the first b
+			       ;; (earlier Emacs versions are different: they delete
+			       ;; the whole word and insert the whole (modified) word
+			       ;; back in)
 			       (substring simacs-deleted-string
 					  (- start simacs-before-change-start)
 					  (+ lll (- start simacs-before-change-start))))
@@ -216,7 +216,7 @@ buffer-local for each buffer running simacs.")
 		(insert (simacs-char-c char))))))))
 
 (defun simacs-replay-fun (replay-buffer simacs-char-hash-tmp i h ovl)
-  "Name muss noch geändert werden und buffer-prefix bekommen:-)"
+  "the name should be changed and get a buffer prefix"
   (when (or (= i (length h)) (= i -1))
     (global-set-key "+" 'self-insert-command)
     (global-set-key "-" 'self-insert-command)
@@ -240,8 +240,8 @@ buffer-local for each buffer running simacs.")
 					(gethash (simacs-char-parent char)
 						 simacs-char-hash-tmp))))
 				  (simacs-id-buffer-get-pos (simacs-char-parent char))))
-	       (simacs-next-id id)) ;; muss auch anders gesetzt werden
-	                            ;; wenn rückwärts... -> gar nicht setzen!
+	       (simacs-next-id id)) 
+	                            ;; if backwards:... -> don't set!
 	  (when (= 1 simacs-replay-direction)
 	    (if (= (simacs-char-type char) simacs-del) ;; deletion
 		(progn 
@@ -295,25 +295,22 @@ buffer-local for each buffer running simacs.")
 
 (defun simacs-replay-async ()
   (interactive)
-  ;; noch ein paar kleinere Probleme:
-  ;; - Leerzeichen nötig am Ende damit Overlay korrekt angezeigt wird
-  ;;   manchmal "nimmt" man hier ein Zeichen mit, wenn man Richtung umstellt
-  ;;   dieses Leerzeichen besser "verwalten"
-  ;; - Scrolling funktioniert nur, wenn man manuell ans Ende des Buffers geht
-  ;; - das Overlay wird nur angezeigt, wenn man einmal den Major-Mode wechselt
-  ;; - Probleme mit der Overlay-Anzeige, wenn man den Anfang einer Zeile
-  ;;   geht, die nur ein Newline enthält (das Overlay erstreckt sich nun auf die ganze
-  ;;   Zeile)
-  ;; - es gibt einen Modus, der den Point mehrerer Benutzer anzeigt - anschauen,
-  ;;   wie das dort gemacht wurde)
-  ;; - Ansonsten aber schon cool, komplett asynchron...
-  ;; simacs-char-hash (and simacs-char-hash-tmp, which is only a reference
-  ;; to it) can grow during replay, as new input might arrive
-  ;; during sit-for intervals. But the sorting of ids at the
-  ;; beginning of this function has the effect of taking a snapshot,
-  ;; i.e. all input arriving after snapshotting is not replayed
-  ;;
-  ;; blöd: 
+  ;; some smaller problems:
+  ;; - spaces necessary at the end of a buffer in order to get overlays 
+  ;;   displayed correctly, sometimes one of those blanks gets "taken
+  ;;   away" when the direction is changed. Understand this better!
+  ;; - scrolling only works when positioning point at (point-max).
+  ;; - the overlay only displays if the major mode is changed at least once.
+  ;; - problems with overlay display if point is at the beginning of a line
+  ;;   that only contains a Newline (the Overlay is now stretched over the
+  ;;   whole line)
+  ;; - there is a mode that displays point of more than one user - how
+  ;;   does it work?
+  ;; - simacs-char-hash (and simacs-char-hash-tmp, which is only a reference
+  ;;   to it) can grow during replay, as new input might arrive
+  ;;   during sit-for intervals. But the sorting of ids at the beginning
+  ;;   of this function has the effect of taking a snapshot,
+  ;;   i.e. all input arriving after snapshotting is not replayed
   (let* ((history (apply 'vector
 			 (sort
 			  (loop for k being the hash-key of simacs-char-hash collect k) 'string<)))
@@ -323,14 +320,15 @@ buffer-local for each buffer running simacs.")
 	 (ovl (make-overlay 1 2 replay-buffer t)))
     (display-buffer replay-buffer)
     (with-current-buffer replay-buffer
-      ;; könnte evtl. bei manchen Modi Probleme bereiten
-      ;; etwa, wenn Einfügen bereits zu einem Ändern
-      ;; des Buffers an anderer Stelle führt...
-      ;; beispiel: ielm - wie erkennt man
-      ;; derartige Modi? Ist wichtig, sonst könnte
-      ;; z.B. bei Shell-Mode etwas gelöscht werden...
-      ;; z.B. ielm: hat buffer-read-only nil,
-      ;; aber einige Textabschnitte sind read-only
+      ;; problems with some modes, e.g. if inserting
+      ;; leads to a change of the buffer at another place
+      ;; example: ielm
+      ;; how to recognize such modes? This is important,
+      ;; because otherwise bad things could happen (consider
+      ;; two people sharing a shell buffer, which has
+      ;; potentially disastrous side effects)
+      ;; ielm: buffer-read-only nil, but some parts of the text
+      ;; are read-only
       (funcall mode)
       (insert " ")
       (overlay-put ovl 'font-lock-face '(:background "orange"))
@@ -423,10 +421,10 @@ works with eq, not with equal"
 ;;  (loop for id being the hash-keys of pending using (hash-values flag)
 ;;	collect
 ;;	(when (= flag 2) (remhash id pending)) ;; oder alternativ (besser für Debugging): count up
-;;            dann fehlt allerdings die Abbruchbedingung...
-;;            z.B. init: 2
-;;            wenn ungerade: sende nicht
-;;            wenn gerade: sende
+;;            but now the break condition is missing...
+;;            e.g. init: 2
+;;            if uneven: don't send
+;;            if even: send
 ;;	(simacs-char-create ...)))
   (let ((package (loop with pending-ids = (loop for k being the hash-key of
 						(simacs-get-pending client) collect k)
@@ -505,9 +503,9 @@ works with eq, not with equal"
                                    ;; via before change / after change functions
 
 (defun simacs-process-insert (id parent c)
-  ;; hier etwas aufwändigere Berechnung machen, wo
-  ;; denn dann wirklich inserted wird...
-  ;; muss auch handeln wenn parent deleted ist
+  ;; calculate here where to insert
+  ;; also has to deal with the case that parent
+  ;; is deleted
   (save-excursion
     (goto-char (1+ (simacs-id-buffer-get-pos parent)))
     (let ((simacs-inhibit-sending t)
